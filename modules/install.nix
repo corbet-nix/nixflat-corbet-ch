@@ -50,14 +50,23 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
       };
+      # An app carrying a `flatpakref` is installed with `--from`, which registers its remote
+      # (name, url AND signing key, all three read out of the ref) and installs in one step. Its
+      # remote is therefore NOT pre-added by the remote-add pass below: `remote-add` against a
+      # bare ostree repo url succeeds while importing no key, and a keyless remote already
+      # present is exactly what makes the later `--from` unable to verify the summary it just
+      # fetched. Add it once, correctly, or not at all -- see ./nixflat.nix's `flatpakref` option
+      # for the error this produces when both happen.
       script = ''
         set -eu
         ${lib.concatMapStringsSep "\n" (r: ''
-          flatpak remote-add --system --if-not-exists ${r.name} ${r.url}
-        '') cfg.remotes}
+          flatpak remote-add --system --if-not-exists ${r.name} ${lib.escapeShellArg r.url}
+        '') cfg.remotesNeedingAdd}
         ${lib.concatMapStringsSep "\n" (a: ''
-          if ! flatpak info --system ${a.id} >/dev/null 2>&1; then
-            flatpak install --system --noninteractive ${a.remoteName} ${a.id}
+          if ! flatpak info --system ${lib.escapeShellArg a.id} >/dev/null 2>&1; then
+            ${if a.flatpakref != null
+              then "flatpak install --system --noninteractive --from ${lib.escapeShellArg a.flatpakref}"
+              else "flatpak install --system --noninteractive ${lib.escapeShellArg a.remoteName} ${lib.escapeShellArg a.id}"}
           fi
         '') cfg.resolvedApps}
       '';

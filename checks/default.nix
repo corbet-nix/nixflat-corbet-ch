@@ -60,6 +60,11 @@ let
     nixflat.apps = [{ id = "com.discordapp.Discord"; inherit (flathub) remoteName remoteUrl; }];
   };
 
+  # A `.flatpakref` for the same app. Threema publishes one and NO `.flatpakrepo` (four
+  # conventional paths probed, all 404, 2026-08-04), which is why the ref is the only mechanism
+  # that carries this remote's signing key.
+  threemaRef = "https://releases.threema.ch/flatpak/threema-desktop/ch.threema.threema-desktop.flatpakref";
+
   # ── Fixture 3: BOTH together — proves no cross-wiring between the two remotes ──
   cfgMixed = evalMod {
     nixflat.apps = [
@@ -106,7 +111,63 @@ let
     ];
   };
 
+  # ── Fixture: the ref path, alone. Its remote must NOT be pre-added: `remote-add` against a
+  # bare ostree repo imports no key, and `--if-not-exists` would then leave that keyless remote
+  # in place for `install --from` to fail against. ──
+  cfgRefOnly = evalMod {
+    nixflat.apps = [{ id = "ch.threema.threema-desktop"; inherit (threema) remoteName remoteUrl; flatpakref = threemaRef; }];
+  };
+
+  # ── Fixture: a ref app and a Flathub app together — the real host shape. ──
+  cfgRefMixed = evalMod {
+    nixflat.apps = [
+      { id = "ch.threema.threema-desktop"; inherit (threema) remoteName remoteUrl; flatpakref = threemaRef; }
+      { id = "com.discordapp.Discord"; inherit (flathub) remoteName remoteUrl; }
+    ];
+  };
+
+  # ── Fixture: ONE remote, two apps, only one carrying a ref. The remote must STILL be added --
+  # the app without a ref installs by remote name and needs it to exist. "Every app", not "any". ──
+  cfgRefPartial = evalMod {
+    nixflat.apps = [
+      { id = "ch.threema.threema-desktop"; inherit (threema) remoteName remoteUrl; flatpakref = threemaRef; }
+      { id = "ch.threema.threema-work-desktop"; inherit (threema) remoteName remoteUrl; }
+    ];
+  };
+
   results = [
+    # ── the signing-key bug: a bare-repo remote has no key, so the ref is the only way in ──
+    (check "flatpakref/installs-with-from"
+      (lib.hasInfix "flatpak install --system --noninteractive --from ${threemaRef}" (scriptOf cfgRefOnly))
+      "script: ${scriptOf cfgRefOnly}")
+
+    # The half that actually fixes it. Pre-adding the remote keyless first is what broke the live
+    # host: remote-add succeeded, imported nothing, and every later op failed on an unverifiable
+    # summary. A suite checking only the --from line above would pass on that broken version too.
+    (check "flatpakref/its-remote-is-not-pre-added"
+      (!(lib.hasInfix "remote-add --system --if-not-exists threema-desktop" (scriptOf cfgRefOnly)))
+      "script: ${scriptOf cfgRefOnly}")
+
+    (check "flatpakref/does-not-install-by-remote-name"
+      (!(lib.hasInfix "flatpak install --system --noninteractive threema-desktop ch.threema.threema-desktop" (scriptOf cfgRefOnly)))
+      "script: ${scriptOf cfgRefOnly}")
+
+    # A ref app must not suppress an unrelated remote that a different app still needs.
+    (check "flatpakref/flathub-is-still-added-alongside"
+      (lib.hasInfix "flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo" (scriptOf cfgRefMixed)
+        && !(lib.hasInfix "remote-add --system --if-not-exists threema-desktop" (scriptOf cfgRefMixed)))
+      "script: ${scriptOf cfgRefMixed}")
+
+    (check "flatpakref/flathub-app-still-installs-by-remote-name"
+      (lib.hasInfix "flatpak install --system --noninteractive flathub com.discordapp.Discord" (scriptOf cfgRefMixed))
+      "script: ${scriptOf cfgRefMixed}")
+
+    # The "every app, not any app" boundary: one app on this remote has no ref, so the remote is
+    # genuinely needed and must still be added.
+    (check "flatpakref/partial-coverage-still-adds-the-remote"
+      (lib.hasInfix "flatpak remote-add --system --if-not-exists threema-desktop https://releases.threema.ch/flatpak/threema-desktop/" (scriptOf cfgRefPartial))
+      "script: ${scriptOf cfgRefPartial}")
+
     # ── the bug this suite exists to catch, permanently ──
     (check "non-flathub/adds-its-own-remote"
       (lib.hasInfix "flatpak remote-add --system --if-not-exists threema-desktop https://releases.threema.ch/flatpak/threema-desktop/" (scriptOf cfgNonFlathubOnly))

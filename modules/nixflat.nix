@@ -46,6 +46,30 @@ let
         type = lib.types.str;
         description = ''The remote's .flatpakrepo URL, e.g. "https://flathub.org/repo/flathub.flatpakrepo".'';
       };
+      flatpakref = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          URL of this app's `.flatpakref`, for a remote whose `remoteUrl` is a bare ostree repo
+          rather than a `.flatpakrepo`. Null (the default) when `remoteUrl` alone is enough.
+
+          THIS IS ABOUT THE SIGNING KEY, not about having a second way to install. A
+          `.flatpakrepo` carries the remote's public key inline as `GPGKey=`, so
+          `flatpak remote-add <name> <that url>` produces a remote whose summary can actually be
+          verified. A bare repo URL carries no key, `remote-add` accepts it anyway, and the
+          failure surfaces later and misleadingly as
+
+              error: Unable to load summary from remote <name>:
+              Signature made ... using EdDSA key ID ...
+              Can't check signature: public key not found
+
+          A `.flatpakref` carries `GPGKey=` the same way a `.flatpakrepo` does, plus the app id
+          and `SuggestRemoteName`, so `flatpak install --from <ref>` registers the remote WITH its
+          key and installs in one step. For a vendor who publishes only a bare repo and a
+          per-app ref -- which is what Threema does -- that is the only mechanism that works at
+          all, so it belongs in the catalogue next to the id rather than as host-side setup.
+        '';
+      };
     };
   };
 
@@ -80,6 +104,16 @@ let
   # wins here — irrelevant to correctness, since the assertion already refuses the build; this
   # value only has to be deterministic, not "right", for a config the build rejects anyway.
   remotes = lib.mapAttrsToList (name: entries: { inherit name; url = lib.head (distinctUrlsFor entries); }) byRemoteName;
+
+  # The remotes ./install.nix must `remote-add` ITSELF, which is not all of them. A remote whose
+  # every app carries a `flatpakref` is registered by `flatpak install --from` -- with the signing
+  # key that ref carries, which is the whole point -- so pre-adding it here would create the same
+  # remote WITHOUT a key first, and `--if-not-exists` would then leave that keyless one in place.
+  # Filtering on "every app", not "any app": one app still installing by remote name genuinely
+  # needs the remote to exist beforehand.
+  refCoveredRemotes = lib.attrNames
+    (lib.filterAttrs (_n: entries: lib.all (a: a.flatpakref != null) entries) byRemoteName);
+  remotesNeedingAdd = lib.filter (r: !(lib.elem r.name refCoveredRemotes)) remotes;
 in
 {
   options.nixflat = {
@@ -113,7 +147,19 @@ in
       type = lib.types.listOf remoteType;
       readOnly = true;
       internal = true;
-      description = "Every distinct remote `resolvedApps` needs, deduplicated by name. What ./install.nix `remote-add`s.";
+      description = "Every distinct remote `resolvedApps` needs, deduplicated by name.";
+    };
+
+    remotesNeedingAdd = lib.mkOption {
+      type = lib.types.listOf remoteType;
+      readOnly = true;
+      internal = true;
+      description = ''
+        The subset of `remotes` that ./install.nix must `remote-add` itself — those with at least
+        one app NOT installed via a `.flatpakref`. A remote every one of whose apps carries a ref
+        is registered, with its signing key, by `flatpak install --from`; pre-adding it keyless
+        first is what breaks it.
+      '';
     };
   };
 
@@ -147,5 +193,6 @@ in
 
     nixflat.resolvedApps = resolvedApps;
     nixflat.remotes = remotes;
+    nixflat.remotesNeedingAdd = remotesNeedingAdd;
   };
 }
