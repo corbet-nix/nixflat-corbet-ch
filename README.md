@@ -7,10 +7,12 @@ Flatpak as a declarative delivery channel, owned in one place instead of copied 
 Package delivery already has two owners: pacman/AUR belongs to
 [nixarch](https://github.com/julian-corbet/nixarch-corbet-ch), nixpkgs belongs to the NixOS
 module system. **Flatpak had none** — every catalogue with a Flatpak-only entry reimplemented the
-installer itself. Two copies existed before this repo:
-[nixmsg](https://github.com/julian-corbet/nixmsg-corbet-ch)'s `modules/flatpak-install.nix` and a
-second one about to be written for a second catalogue — exactly the duplication this project
-family has spent effort deleting everywhere else. nixflat is that one place.
+installer itself. [nixmsg](https://github.com/julian-corbet/nixmsg-corbet-ch)'s
+`modules/flatpak-install.nix` was the first; the second was about to be written verbatim for
+[nixoffice](https://github.com/julian-corbet/nixoffice-corbet-ch), which had just declared a
+Flatpak-only app of its own. Extracting at that point rather than after the copy is the only
+reason there is one implementation to fix when the next remote-handling bug turns up — and there
+has already been one. nixflat is that one place.
 
 ## What this is
 
@@ -83,10 +85,10 @@ Flathub as the only remote it would ever add or install from, which could not in
 own catalogue entry at all (see that file's own header for the live-confirmed detail). To prove
 the suite here would actually have caught it — not just that it currently passes — the fix was
 reverted in `modules/install.nix` (both `remote-add` and `install` lines hardcoded back to
-`flathub`) and `nix flake check` was run against that broken version before being restored. The
-real output of both runs is recorded in this repo's commit history / the migration report; the
-suite fails on the broken version and passes once restored, which is the property "non-vacuous"
-actually means here — a suite that passes on both versions is proving nothing.
+`flathub`) and `nix flake check` was run against that broken version before being restored. It
+failed, then passed once restored — which is what "non-vacuous" actually means here, since a
+suite that passes on both versions is proving nothing. Reproduce it the same way: hardcode
+`flathub` into either rendered line and re-run `nix flake check`.
 
 ## Platform support
 
