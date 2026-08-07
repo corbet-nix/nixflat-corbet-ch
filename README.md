@@ -16,16 +16,19 @@ has already been one. nixflat is that one place.
 
 ## What this is
 
-- **`modules/nixflat.nix`** — the policy layer. One option, `nixflat.apps`, and the dedup +
-  conflict logic behind it. Importable on its own if you want the shape without the installer.
+- **`modules/nixflat.nix`** — the policy layer. `nixflat.apps` and the dedup + conflict logic
+  behind it, plus `nixflat.archPackages` (the `flatpak` runtime, as a pacman name, for whatever
+  Arch reconciler picks it up). Importable on its own if you want the shape without the installer.
 - **`modules/install.nix`** — the installer: a systemd oneshot that `remote-add`s every distinct
   remote the declared apps need and installs each app from *its own* remote. One file, imported
-  unmodified by both platform backends below — Flatpak install has no platform divergence to
+  unmodified by both platform backends below — Flatpak APP install has no platform divergence to
   backend around, unlike a repo/AUR/nixpkgs catalogue.
-- **`modules/nixos.nix`**, **`modules/arch.nix`** — thin per-plane wrappers around
-  `install.nix`, kept as separate files only so the flake's `nixosModules.default` /
-  `systemManagerModules.default` outputs stay independently stable if a genuinely
-  platform-specific need ever shows up (see `install.nix`'s own header).
+- **`modules/nixos.nix`**, **`modules/arch.nix`** — per-plane wrappers around `install.nix`, kept
+  as separate files so the flake's `nixosModules.default` / `systemManagerModules.default` outputs
+  stay independently stable when a genuinely platform-specific need shows up — which happened:
+  `nixos.nix` now also wires `services.flatpak.enable`, the `flatpak` RUNTIME's NixOS-side
+  counterpart to `archPackages` above (see "Does nixflat declare the `flatpak` package itself?"
+  below).
 
 ## The option surface
 
@@ -61,22 +64,50 @@ the read-only, already-deduplicated values `modules/install.nix` actually render
 
 ## Does nixflat declare the `flatpak` package itself?
 
-**No — not onto the host at large.** `modules/install.nix` puts `pkgs.flatpak` on its *own*
-systemd unit's `path`, so the oneshot needs no separate host-level package declaration to run —
-composing this flake is self-contained. It stops there deliberately: it does not add `flatpak` to
-`environment.systemPackages`, does not enable NixOS's `services.flatpak` (the D-Bus/portal
-integration service used for desktop-launcher and sandboxed-file-access integration), and does
-not add `flatpak` to an Arch reconciler's package list.
+**Yes, now — on every plane, gated on the same signal the installer itself uses.**
+`modules/install.nix` still puts `pkgs.flatpak` on its *own* systemd unit's `path` regardless (the
+oneshot needs it on its PATH whether or not anything else on the host also provides it), but that
+used to be the whole story, and it stopped being one place too many: the `flatpak` package itself
+was hand-written as an identical raw pacman string in two separate consumer host files, with no
+repo owning it — the same duplication this project exists to end for apps and remotes. Now:
 
-Those three are **desktop-integration policy**, not installer plumbing: whether an operator gets
-an interactive `flatpak` CLI on their own `$PATH`, whether installed apps get full portal
-integration (file choosers, launcher entries beyond what the app itself ships), and how a host's
-own package reconciler is shaped are all host-level decisions this module has no basis to make
-for every consumer. This is the same boundary nixmsg's own installer already drew for itself —
-autostart commands, workspace-pin window rules, and compositor wiring all live *outside* its
-installer for the identical reason: the installer's job is "the declared thing exists", not "the
-declared thing is nicely integrated into this particular desktop." A host that wants the
-interactive CLI or portal integration adds it itself, same as any other desktop-policy choice.
+- **`nixflat.archPackages`** (`modules/nixflat.nix`) — `[ "flatpak" ]` when this host has resolved
+  at least one app (`nixflat.resolvedApps != [ ]`), `[ ]` otherwise. A plain pacman-name list,
+  published read-only for whatever reconciler a system-manager consumer runs, the same
+  "publish a list, the consumer wires it in" boundary nixbmc's own `archPackages` draws for
+  itself:
+
+  ```nix
+  nixarch.packages.pacman = config.nixflat.archPackages;
+  ```
+
+- **`services.flatpak.enable`** (`modules/nixos.nix`) — set to `true` under the identical
+  `resolvedApps != [ ]` gate. This is an upstream nixpkgs module, not a bare package name: it
+  installs `flatpak` **and** registers it with D-Bus and systemd in one step, so there is no
+  second line to add for the package itself on this plane. Asking for `pkgs.flatpak` in
+  `environment.systemPackages` directly would be the same category of gap this project's own
+  `portals`-role sibling in nixdesktop already documents for a different package — present, but
+  never actually registered with anything.
+
+**Both gated on `resolvedApps`, no new toggle.** A consumer who imports this flake but declares no
+apps in `nixflat.apps` gains nothing extra on either plane — exactly the same behaviour as before
+this option existed, just now stated as a real value instead of an absence.
+
+**What this still does NOT decide** is the layer above the runtime's mere presence: whether an
+operator gets an interactive `flatpak` CLI wired into their own shell beyond what the package
+already puts on `$PATH`, which portal *backend* (gtk, gnome, kde...) a desktop registers, autostart
+commands, workspace-pin window rules, or compositor wiring. Those stay host-level desktop-policy
+decisions, the same boundary nixmsg's own installer draws for the identical reason.
+
+**A working file picker needs more than the package, on at least one real deployment of this
+family.** Flatpak's sandboxed file chooser goes through `xdg-document-portal`, which needs real
+userspace FUSE — on a privileged LXC container running this flake's Arch backend, `/dev/fuse` was
+simply absent (the container's `/dev` is rebuilt from scratch every start) until the *host* bound
+it in and cgroup-allowed it; an ordinary bare-metal box needed nothing extra, its `/dev/fuse`
+already being present as an ordinary device node. That is not something this module can detect or
+fix at eval time — a container's device visibility is a fact about the container runtime, not
+about anything `nixflat.apps` or `resolvedApps` could ever express — so it stays a note for
+whoever composes this flake onto a container, not a gate this repo adds for itself.
 
 ## Non-vacuity: the checks fail on the bug they exist to catch
 
@@ -92,22 +123,29 @@ suite that passes on both versions is proving nothing. Reproduce it the same way
 
 ## Platform support
 
-**NixOS:** Full — `nixosModules.default` (== `nixosModules.install`).
+**NixOS:** Full — `nixosModules.default` (== `nixosModules.install`). App install: the shared
+oneshot. Runtime: `services.flatpak.enable`, wired directly by this module — nothing left for a
+consumer host to add.
 
-**Arch / CachyOS (via system-manager):** Full — `systemManagerModules.default`. Flatpak install
-has no platform divergence, so this is not a reduced backend the way nixmsg's/nixoffice's Arch
-side is (those publish package-name lists for a host reconciler because pacman itself does the
-installing; nixflat's Arch backend installs directly, exactly like its NixOS backend).
+**Arch / CachyOS (via system-manager):** Full — `systemManagerModules.default`. App install has no
+platform divergence, so this is not a reduced backend the way nixmsg's/nixoffice's Arch side is
+(those publish package-name lists for a host reconciler because pacman itself does the installing
+for apps; nixflat's Arch backend installs apps directly, exactly like its NixOS backend). The
+runtime package is the one place this backend genuinely IS reduced, the same way nixmsg's/
+nixoffice's Arch side is for their own packages: `archPackages` publishes the pacman name, and a
+consumer host wires it into its own reconciler (`nixarch.packages.pacman = config.nixflat.archPackages;`)
+— this backend has no reconciler of its own to install it with directly.
 
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
 | `flake.nix` | Flake entry point: `nixosModules`/`systemManagerModules` outputs. |
-| `modules/nixflat.nix` | Platform-neutral policy: the `apps` option, dedup, conflict guards. |
-| `modules/install.nix` | The shared installer (systemd oneshot). One file, both planes. |
-| `modules/nixos.nix`, `modules/arch.nix` | Thin per-plane wrappers around `install.nix`. |
-| `checks/` | `nix flake check` — eval-time proof of the dedup/conflict logic and the rendered script, including the non-Flathub regression this repo exists to prevent. |
+| `modules/nixflat.nix` | Platform-neutral policy: the `apps` option, dedup, conflict guards, and `archPackages` (the `flatpak` runtime as a pacman name). |
+| `modules/install.nix` | The shared APP installer (systemd oneshot). One file, both planes. |
+| `modules/nixos.nix` | NixOS backend: imports the installer, wires `services.flatpak.enable` (the runtime). |
+| `modules/arch.nix` | Arch/system-manager backend: imports the installer; the runtime is `archPackages`, for a consumer to wire in itself. |
+| `checks/` | `nix flake check` — eval-time proof of the dedup/conflict logic, the rendered script, and the runtime-package gating on both planes, including the non-Flathub regression this repo exists to prevent. |
 
 ## Related projects
 

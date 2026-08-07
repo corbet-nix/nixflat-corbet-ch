@@ -23,14 +23,22 @@
 # declared list — same "declaring is not pruning" posture nixarch's own `pruneUndeclared` takes,
 # deliberately not solved here either.
 #
-# THE flatpak PACKAGE ITSELF: provided to THIS UNIT's own PATH only (below), never declared onto
-# the host at large. This module's job stops at "the declared app IDs exist on the host" — an
-# interactive `flatpak` CLI on a user's own $PATH, `services.flatpak` (NixOS's D-Bus/portal
-# integration), or an Arch `flatpak` reconciler entry are desktop-integration policy decisions,
-# and none of them are this module's to make on a consumer's behalf, the same boundary nixmsg's
-# own header draws around its identical installer (autostart, workspace-pin, and compositor
-# wiring all live OUTSIDE that repo's installer for the same reason). See README.md for the full
-# reasoning and what a consumer who wants portal integration adds themselves.
+# THE flatpak PACKAGE ITSELF, FOR THIS UNIT: provided to THIS unit's own PATH only (below),
+# independent of whatever the host declares at large — this oneshot needs `flatpak` on its PATH
+# regardless of whether an interactive CLI or `services.flatpak` also happen to put it there, so
+# it names its own copy rather than assuming one of those already ran first.
+#
+# THE flatpak PACKAGE ITSELF, FOR THE HOST: no longer this file's call, and no longer absent
+# either — it is now owned by the two plane-specific backends, gated on the same
+# `resolvedApps != [ ]` this unit itself renders on: ./nixflat.nix's `archPackages` (a pacman name
+# published for whatever reconciler a system-manager consumer runs) and ./nixos.nix's
+# `services.flatpak.enable` (the upstream option that both installs the package and registers it
+# with D-Bus/systemd, not a bare package name). What this module still does NOT decide is
+# desktop-integration policy one layer up — an interactive `flatpak` CLI on a user's own
+# non-system $PATH, portal-BACKEND selection, autostart, workspace-pin, or compositor wiring are
+# all still a consumer's own call, the same boundary nixmsg's own header draws around its
+# identical installer for that layer. See README.md for the full reasoning and what a consumer
+# who wants deeper desktop integration adds themselves.
 #
 { config, lib, pkgs, ... }:
 let

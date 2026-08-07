@@ -20,14 +20,18 @@
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in
     {
-      # Platform-neutral policy: the apps option, dedup, and conflict guards. Import this
-      # directly if you want the shape without the installer.
+      # Platform-neutral policy: the apps option, dedup, and conflict guards, plus (since the
+      # `flatpak` runtime package became this repo's job too) `archPackages`, the pacman-name
+      # half of that decision. Import this directly if you want the shape without the installer.
       nixosModules.nixflat = ./modules/nixflat.nix;
       systemManagerModules.nixflat = ./modules/nixflat.nix;
 
-      # The installer — one file, both planes (see modules/install.nix's own header for why a
-      # single implementation is correct here, unlike siblings with genuinely per-platform
-      # package names).
+      # The installer — one file, both planes for the APP install (see modules/install.nix's own
+      # header for why a single implementation is correct here, unlike siblings with genuinely
+      # per-platform package names). The `flatpak` RUNTIME package now diverges per plane instead:
+      # modules/nixos.nix wires the upstream `services.flatpak.enable` option, modules/arch.nix
+      # has nothing to wire (the pacman name published as `archPackages` above is enough) — see
+      # each file's own header.
       nixosModules.default = ./modules/nixos.nix;
       nixosModules.install = ./modules/nixos.nix;
       systemManagerModules.default = ./modules/arch.nix;

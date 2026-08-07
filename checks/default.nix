@@ -1,10 +1,12 @@
 # checks/default.nix
 #
-# EVAL-TIME checks for modules/nixflat.nix's dedup/conflict logic and modules/install.nix's
-# rendering of it — the same `lib.evalModules` + stubbed option-surface technique nixmsg's own
-# checks/default.nix uses (see that file's own header): no real NixOS/system-manager evaluation,
-# because what is under test is only what these two files RENDER (an option value, a systemd unit
-# script, an assertions list), never whether `flatpak` on a real host actually converges.
+# EVAL-TIME checks for modules/nixflat.nix's dedup/conflict logic, modules/install.nix's
+# rendering of it, and (since the `flatpak` runtime package became this repo's job too) the two
+# plane-specific backends that carry it — the same `lib.evalModules` + stubbed option-surface
+# technique nixmsg's own checks/default.nix uses (see that file's own header): no real
+# NixOS/system-manager evaluation, because what is under test is only what these files RENDER (an
+# option value, a systemd unit script, an assertions list), never whether `flatpak` on a real host
+# actually converges.
 #
 # THE BUG THIS SUITE EXISTS TO CATCH, PERMANENTLY. nixmsg's own flatpak-install.nix once
 # hardcoded Flathub as the only remote it would ever `remote-add` or install from — silently
@@ -37,6 +39,25 @@ let
       { _module.args.pkgs = pkgs; }
       ../modules/nixflat.nix
       ../modules/install.nix
+      extraConfig
+    ];
+  }).config;
+
+  # Stub of the ONE upstream option modules/nixos.nix reaches for, `services.flatpak.enable` —
+  # same technique as systemSurfaceStub above: a real NixOS evaluation is not under test here,
+  # only whether this repo's own module sets the option correctly.
+  nixosSurfaceStub = { lib, ... }: {
+    options.services.flatpak.enable = lib.mkOption { type = lib.types.bool; default = false; };
+  };
+
+  evalNixosMod = extraConfig: (lib.evalModules {
+    modules = [
+      systemSurfaceStub
+      nixosSurfaceStub
+      { _module.args.pkgs = pkgs; }
+      ../modules/nixflat.nix
+      ../modules/install.nix
+      ../modules/nixos.nix
       extraConfig
     ];
   }).config;
@@ -75,6 +96,14 @@ let
 
   # ── Fixture 4: nothing declared at all — the oneshot must stay a clean no-op ──
   cfgEmpty = evalMod { };
+
+  # ── Fixture: the same "nothing declared" and "one app declared" pair, run through the NixOS
+  # backend instead — proves `services.flatpak.enable` tracks `resolvedApps`, not a separate
+  # toggle nobody set ──
+  cfgNixosEmpty = evalNixosMod { };
+  cfgNixosFlathubOnly = evalNixosMod {
+    nixflat.apps = [{ id = "com.discordapp.Discord"; inherit (flathub) remoteName remoteUrl; }];
+  };
 
   # ── Fixture 5: two DIFFERENT apps from two (hypothetical) catalogues naming the SAME remote —
   # one `remote-add`, not two ──
@@ -214,6 +243,26 @@ let
     (check "empty/unit-absent"
       (!(cfgEmpty.systemd.services ? "nixflat-install"))
       "systemd.services keys: ${builtins.toJSON (builtins.attrNames cfgEmpty.systemd.services)}")
+
+    # ── the flatpak RUNTIME package, Arch/system-manager plane: nixflat.archPackages tracks
+    # resolvedApps, gains nothing when nothing is declared ──
+    (check "runtime/arch-empty-publishes-no-package"
+      (cfgEmpty.nixflat.archPackages == [ ])
+      "archPackages: ${builtins.toJSON cfgEmpty.nixflat.archPackages}")
+
+    (check "runtime/arch-with-apps-publishes-flatpak"
+      (cfgFlathubOnly.nixflat.archPackages == [ "flatpak" ])
+      "archPackages: ${builtins.toJSON cfgFlathubOnly.nixflat.archPackages}")
+
+    # ── the flatpak RUNTIME package, NixOS plane: services.flatpak.enable tracks resolvedApps,
+    # the exact same signal as the Arch plane's archPackages above and the oneshot's own mkIf ──
+    (check "runtime/nixos-empty-does-not-enable-services-flatpak"
+      (cfgNixosEmpty.services.flatpak.enable == false)
+      "services.flatpak.enable: ${builtins.toJSON cfgNixosEmpty.services.flatpak.enable}")
+
+    (check "runtime/nixos-with-apps-enables-services-flatpak"
+      (cfgNixosFlathubOnly.services.flatpak.enable == true)
+      "services.flatpak.enable: ${builtins.toJSON cfgNixosFlathubOnly.services.flatpak.enable}")
 
     # ── dedup: same remote named by two different apps produces ONE remote-add ──
     (check "dedup/shared-remote-adds-once"

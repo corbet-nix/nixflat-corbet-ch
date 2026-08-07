@@ -28,6 +28,13 @@
 # all. An eval-time assertion catches this instead of shipping a host where one catalogue's app
 # quietly fails to install.
 #
+# THE flatpak RUNTIME ITSELF IS ALSO A POLICY VALUE, not an install. `archPackages` below answers
+# "does this host need the `flatpak` package at all", derived from the same `resolvedApps` this
+# file already computes — it does not add the package to anything, the same "policy, not backend"
+# split the rest of this file draws for apps and remotes. See its own option doc for the NixOS
+# plane's different shape (an upstream option, not a package name) and ./install.nix's header for
+# why the package used to stop at the oneshot's own PATH before this option existed.
+#
 { config, lib, ... }:
 let
   cfg = config.nixflat;
@@ -114,6 +121,15 @@ let
   refCoveredRemotes = lib.attrNames
     (lib.filterAttrs (_n: entries: lib.all (a: a.flatpakref != null) entries) byRemoteName);
   remotesNeedingAdd = lib.filter (r: !(lib.elem r.name refCoveredRemotes)) remotes;
+
+  # THE flatpak RUNTIME PACKAGE ITSELF, for the Arch/system-manager plane. Gated on the exact same
+  # signal ./install.nix already uses to decide whether the oneshot renders at all
+  # (`resolvedApps != [ ]`) — "this host declared at least one Flatpak app" IS "this host uses
+  # Flatpak", and reusing it here means a consumer who imports this flake but never populates
+  # `nixflat.apps` gains nothing extra, exactly as before this option existed. No new toggle: see
+  # this file's own README section on why the package used to stop at the installer unit's own
+  # `path` and why that is no longer the whole story.
+  archPackages = lib.optional (resolvedApps != [ ]) "flatpak";
 in
 {
   options.nixflat = {
@@ -161,6 +177,29 @@ in
         first is what breaks it.
       '';
     };
+
+    archPackages = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      readOnly = true;
+      description = ''
+        The `flatpak` package itself, as a pacman package name, when (and only when) this host
+        has resolved at least one app (`resolvedApps != [ ]`) — `[ "flatpak" ]` then, `[ ]`
+        otherwise. This module cannot install it: on Arch there is no installer here to call
+        (see ./install.nix's own header on why the package used to stop at the oneshot's own
+        `path`). Feed it to whatever reconciler the host runs, alongside `nixflat.apps` itself:
+
+          nixarch.packages.pacman = config.nixflat.archPackages;
+
+        Kept as a plain list rather than wired into any particular reconciler on purpose — that
+        would couple this flake to one consumer's package module, the same boundary nixbmc's own
+        `archPackages` draws for itself.
+
+        The NixOS plane has no equivalent option: `flatpak` there is not a bare package name but
+        `services.flatpak.enable` (see ./nixos.nix), an upstream nixpkgs module that pulls the
+        package in as a side effect of registering it with D-Bus and systemd — the same
+        package-vs-option asymmetry nixdesktop's `portals` role draws between its own two planes.
+      '';
+    };
   };
 
   config = {
@@ -194,5 +233,6 @@ in
     nixflat.resolvedApps = resolvedApps;
     nixflat.remotes = remotes;
     nixflat.remotesNeedingAdd = remotesNeedingAdd;
+    nixflat.archPackages = archPackages;
   };
 }
