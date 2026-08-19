@@ -15,7 +15,20 @@
 
   outputs = { self, nixpkgs }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      # ONLY THE SYSTEM THESE CHECKS CAN GENUINELY BE BUILT ON, which is the narrower claim and the
+      # honest one. The eval checks are real derivations, and an aarch64-linux derivation cannot be
+      # built by an x86_64 runner, so declaring aarch64 bought no coverage whatsoever: a bare
+      # `nix flake check` answered with "The check omitted these incompatible systems:
+      # aarch64-linux" and exited 0 — CI reported green having evaluated half of what this flake
+      # claimed, which for this repo included the non-Flathub regression guard below.
+      #
+      # Keeping aarch64 and dropping `--all-systems` is the worse trade and the one this family
+      # refuses. Narrow the claim, keep the check strict — see .github/workflows/ci.yml.
+      #
+      # Nothing else narrows: the modules take `pkgs` from whatever evaluation composes them, so a
+      # consumer still gets this on any platform. Only `checks` and `formatter` were ever
+      # system-scoped here.
+      systems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in
