@@ -1,6 +1,6 @@
 name: ci
 
-# Manual fallback; trusted verification runs through Crow (see ci/README.md).
+# Manual fallback; trusted verification runs through Crow (see .ci/README.md).
 on:
   workflow_dispatch:
 
@@ -33,4 +33,4 @@ jobs:
       # derivation reports itself instead of hiding every check queued behind it. The run still
       # exits non-zero — this widens what one red run tells you, it does not make anything green.
       - name: nix flake check (all systems)
-        run: ci/check all-systems
+        run: nix flake check --all-systems --keep-going --print-build-logs
