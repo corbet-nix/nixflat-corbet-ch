@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # Arch / system-manager backend. The APP install is identical to modules/nixos.nix's — Flatpak
 # install has no platform divergence to backend around — see that file's own header for why this

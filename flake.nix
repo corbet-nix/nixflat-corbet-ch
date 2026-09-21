@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 {
   description = "nixflat — Flatpak as a declarative delivery channel: one place installing apps by Flatpak ID and remote, instead of a copy per catalogue";
 

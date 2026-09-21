@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # checks/default.nix
 #
 # EVAL-TIME checks for modules/nixflat.nix's dedup/conflict logic, modules/install.nix's

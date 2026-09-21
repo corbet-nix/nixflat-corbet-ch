@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # NixOS backend. The APP install itself is byte-identical to modules/arch.nix — Flatpak install
 # has no platform divergence, unlike nixmsg/nixoffice's repo/AUR channels, which genuinely need a

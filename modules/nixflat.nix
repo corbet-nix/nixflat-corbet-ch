@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # nixflat — the policy layer: which Flatpak apps a host wants, and which remote each one comes
 # from. Owns nothing about HOW they get installed (see ./install.nix for the systemd oneshot) —

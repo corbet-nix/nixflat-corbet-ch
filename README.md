@@ -5,11 +5,11 @@ Flatpak as a declarative delivery channel, owned in one place instead of copied 
 ## Why this exists
 
 Package delivery already has two owners: pacman/AUR belongs to
-[nixarch](https://github.com/julian-corbet/nixarch-corbet-ch), nixpkgs belongs to the NixOS
+[nixarch](https://github.com/corbet-nix/nixarch-corbet-ch), nixpkgs belongs to the NixOS
 module system. **Flatpak had none** — every catalogue with a Flatpak-only entry reimplemented the
-installer itself. [nixmsg](https://github.com/julian-corbet/nixmsg-corbet-ch)'s
+installer itself. [nixmsg](https://github.com/corbet-nix/nixmsg-corbet-ch)'s
 `modules/flatpak-install.nix` was the first; the second was about to be written verbatim for
-[nixoffice](https://github.com/julian-corbet/nixoffice-corbet-ch), which had just declared a
+[nixoffice](https://github.com/corbet-nix/nixoffice-corbet-ch), which had just declared a
 Flatpak-only app of its own. Extracting at that point rather than after the copy is the only
 reason there is one implementation to fix when the next remote-handling bug turns up — and there
 has already been one. nixflat is that one place.
@@ -46,8 +46,8 @@ that Flathub does not carry at all (Flathub's own Threema listing,
 build, `releases.threema.ch`).
 
 Two catalogues in this family already emit precisely this shape, read-only —
-[nixmsg](https://github.com/julian-corbet/nixmsg-corbet-ch)'s `nixmsg.flatpakApps` and
-[nixoffice](https://github.com/julian-corbet/nixoffice-corbet-ch)'s `nixoffice.flatpakApps` — so
+[nixmsg](https://github.com/corbet-nix/nixmsg-corbet-ch)'s `nixmsg.flatpakApps` and
+[nixoffice](https://github.com/corbet-nix/nixoffice-corbet-ch)'s `nixoffice.flatpakApps` — so
 wiring both into nixflat is one line:
 
 ```nix
@@ -150,14 +150,14 @@ consumer host wires it into its own reconciler (`nixarch.packages.pacman = confi
 ## Related projects
 
 Part of the same independently-usable NixOS module family:
-[nixmsg](https://github.com/julian-corbet/nixmsg-corbet-ch) and
-[nixoffice](https://github.com/julian-corbet/nixoffice-corbet-ch) (the two catalogues that feed
-`nixflat.apps` today), [nixarch](https://github.com/julian-corbet/nixarch-corbet-ch) (the
+[nixmsg](https://github.com/corbet-nix/nixmsg-corbet-ch) and
+[nixoffice](https://github.com/corbet-nix/nixoffice-corbet-ch) (the two catalogues that feed
+`nixflat.apps` today), [nixarch](https://github.com/corbet-nix/nixarch-corbet-ch) (the
 pacman/AUR equivalent of this repo's job, for the channel nixflat does not own), and
-[nixmedia](https://github.com/julian-corbet/nixmedia-corbet-ch) (a third catalogue shaped the
+[nixmedia](https://github.com/corbet-nix/nixmedia-corbet-ch) (a third catalogue shaped the
 same way, currently Flatpak-free — a future Flatpak-only entry there wires in with the same `++`
 shown above).
 
-## License
+## Licence
 
-MIT License &copy; 2026 Julian Corbet
+Outbound licence is `MIT OR Apache-2.0`. See `LICENSE-MIT` and `LICENSE-APACHE`; every source file carries `SPDX-License-Identifier: MIT OR Apache-2.0`.

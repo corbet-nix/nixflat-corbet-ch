@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # nixflat's installer — the systemd oneshot that converges installed Flatpak app IDs toward
 # `nixflat.resolvedApps`. Extracted from nixmsg's `modules/flatpak-install.nix` (that file's own
